@@ -14,7 +14,7 @@ const STAGES = [
 const GAPS = [1, 3, 7, 14, 30, 60, 120]; // дни между повторениями
 const GOOD = ['Верно! 🎉','Отлично!','Так держать!','Супер!','Точно в цель!','Блестяще!'];
 const BAD = ['Ничего, бывает','Почти!','Запомни этот ответ','Не сдавайся!'];
-const EMPTY = { xp: 0, streak: 0, last: '', done: {}, daily: { d: '', xp: 0 }, mistakes: [], perfect: 0, blitz: 0, memory: 0, sound: true, badges: {}, skip: 0, placed: false, srs: {} };
+const EMPTY = { xp: 0, streak: 0, last: '', done: {}, daily: { d: '', xp: 0 }, mistakes: [], perfect: 0, blitz: 0, memory: 0, sound: true, badges: {}, skip: 0, placed: false, srs: {}, sets: {}, voa: {} };
 let S;
 try { S = Object.assign({}, EMPTY, JSON.parse(localStorage.getItem('englishup2') || '{}')); } catch (e) { S = Object.assign({}, EMPTY); }
 const save = () => { try { localStorage.setItem('englishup2', JSON.stringify(S)); } catch (e) {} };
@@ -24,11 +24,25 @@ const KEY = {}; // en → { item, unit }
 // id — порядок добавления, он не меняется и хранится в прогрессе; после сортировки разделы идут по ступеням
 UNITS.forEach((u, i) => { u.id = i; u.lvl = u.lvl || 'A1'; u.si = STAGES.findIndex(s => s.id === u.lvl); });
 UNITS.sort((a, b) => a.si - b.si);
+const indexUnit = u => {
+  u.phrases.forEach(p => { p.si = u.si; KEY[p[0]] = KEY[p[0]] || { item: p, unit: u }; });
+  u.words.forEach(w => { KEY[w[0]] = KEY[w[0]] || { item: w, unit: u }; });
+};
 UNITS.forEach((u, i) => {
   STAGES[u.si].units.push(i);
   STAGES[u.si].phrases.push(...u.phrases);
-  u.phrases.forEach(p => { p.si = u.si; KEY[p[0]] = { item: p, unit: u }; });
-  u.words.forEach(w => { KEY[w[0]] = { item: w, unit: u }; });
+  indexUnit(u);
+});
+// разделы вкладки «Цель» идут за основным путём: они открыты сразу и не влияют на прогресс по ступеням
+const MAIN = UNITS.length;
+GOAL_TRACKS.forEach((t, ti) => t.units.forEach((u, i) => {
+  u.id = 1000 + ti * 100 + i; u.lvl = 'B1'; u.si = 2; u.ui = UNITS.push(u) - 1;
+  indexUnit(u);
+}));
+const SETS = SENTENCES.map((s, i) => {
+  const u = { title: 'Набор ' + (i + 1), si: i < 34 ? 1 : i < 60 ? 2 : 3, words: [], phrases: s };
+  indexUnit(u);
+  return u;
 });
 
 const shuffle = a => { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.random() * (i + 1) | 0; [a[i], a[j]] = [a[j], a[i]]; } return a; };
@@ -56,8 +70,8 @@ const doneKey = (ui, p) => UNITS[ui].id + '-' + p;
 const skipIdx = () => Math.max(0, UNITS.findIndex(u => u.id === S.skip));
 const doneOf = (ui, p) => S.done[doneKey(ui, p)] || (ui < skipIdx() ? 1 : 0);
 function curUnit() {
-  for (let i = 0; i < UNITS.length; i++) if (![0, 1, 2].every(p => doneOf(i, p))) return i;
-  return UNITS.length - 1;
+  for (let i = 0; i < MAIN; i++) if (![0, 1, 2].every(p => doneOf(i, p))) return i;
+  return MAIN - 1;
 }
 function score() {
   const si = UNITS[curUnit()].si, st = STAGES[si];
@@ -94,11 +108,11 @@ function tone(freqs, dur, type) {
 const sfx = { ok: () => tone([660, 880], 0.1), bad: () => tone([220, 160], 0.14, 'sawtooth'), win: () => tone([523, 659, 784, 1047], 0.14), tap: () => tone([520], 0.04) };
 const vib = n => { try { navigator.vibrate && navigator.vibrate(n); } catch (e) {} };
 
-function speak(text) {
+function speak(text, rate) {
   if (!text || !('speechSynthesis' in window)) return;
   speechSynthesis.cancel();
   const u = new SpeechSynthesisUtterance(text);
-  u.lang = 'en-US'; u.rate = 0.9;
+  u.lang = 'en-US'; u.rate = rate || 0.9;
   speechSynthesis.speak(u);
 }
 
@@ -157,13 +171,13 @@ function touchStreak() {
 let tab = 'learn', firstScroll = true;
 try { history.scrollRestoration = 'manual'; } catch (e) {}
 function tabbar() {
-  return '<nav class="tabs">' + [['learn', '🏠', 'Учиться'], ['games', '🎮', 'Игры'], ['me', '🏆', 'Профиль']].map(t =>
+  return '<nav class="tabs">' + [['learn', '🏠', 'Учиться'], ['goal', '🎯', 'Цель'], ['games', '🎮', 'Игры'], ['me', '🏆', 'Профиль']].map(t =>
     `<button class="${tab === t[0] ? 'on' : ''}" onclick="setTab('${t[0]}')"><span>${t[1]}</span>${t[2]}</button>`).join('') + '</nav>';
 }
 function setTab(t) { stopGames(); tab = t; sfx.tap(); render(); window.scrollTo(0, 0); }
 function render() {
   if (!S.placed) return welcome();
-  tab === 'learn' ? home() : tab === 'games' ? games() : profile();
+  tab === 'learn' ? home() : tab === 'goal' ? goals() : tab === 'games' ? games() : profile();
 }
 
 function welcome() {
@@ -176,7 +190,7 @@ function home() {
   html += `<div class="goal"><div class="fox">🦊</div><div style="flex:1"><div class="gt">${dx >= GOAL ? 'Цель дня выполнена! 🎉' : 'Цель дня: ' + dx + ' / ' + GOAL + ' XP'}</div><div class="progress"><div style="width:${Math.min(100, dx / GOAL * 100)}%"></div></div></div></div>`;
   if (due) html += `<button class="gcard review" style="--c:#ff9600" onclick="startReview()"><b>🧠</b><div><h3>Пора повторить: ${due}</h3><p>Эти слова скоро забудутся — закрепите их сейчас</p></div></button>`;
   let prev = true, k = 0;
-  UNITS.forEach((u, ui) => {
+  UNITS.slice(0, MAIN).forEach((u, ui) => {
     const [c, cd] = PAL[ui % PAL.length], st = STAGES[u.si];
     if (st.units[0] === ui) {
       const ahead = ui > cur;
@@ -194,6 +208,59 @@ function home() {
   html += '</div>' + tabbar();
   app.innerHTML = html;
   if (firstScroll) { firstScroll = false; setTimeout(() => { const n = document.querySelector('.node.cur'); if (n) n.scrollIntoView({ block: 'center' }); }, 50); }
+}
+
+/* ---------- Вкладка «Цель» ---------- */
+function goals() {
+  const nextSet = SETS.findIndex((s, i) => !S.sets[i]), doneSets = Object.keys(S.sets).length;
+  const nextVoa = VOA.findIndex((v, i) => !S.voa[i]), doneVoa = Object.keys(S.voa).length;
+  let html = `<div class="top"><span class="logo">🎯 Цель</span><span class="stats"><span>🔥 ${S.streak}</span><span>⭐ ${S.xp}</span></span></div><div class="path pr">
+    <p class="intro">Понимать сериалы и свободно общаться в чате на стриме. Разделы открыты сразу, идите в любом порядке.</p>`;
+  html += `<div class="gsec"><h3>📺 Видеоуроки</h3><p>Курс Let's Learn English: живая речь актёров с текстом. Пройдено ${doneVoa} из ${VOA.length}</p>
+    ${nextVoa >= 0 ? `<button class="btn" onclick="openVoa(${nextVoa})">${VOA[nextVoa].t}</button>` : ''}
+    <details><summary>Все уроки</summary>${VOA.map((v, i) => `${!i || VOA[i - 1].g !== v.g ? `<h4>${v.g}</h4>` : ''}<button class="vrow" onclick="openVoa(${i})">${S.voa[i] ? '✅' : '▶️'} ${v.t}</button>`).join('')}</details></div>`;
+  html += `<div class="gsec"><h3>💬 Живые фразы</h3><p>Реальные разговорные фразы: сказать, услышать, записать. Пройдено наборов ${doneSets} из ${SETS.length}</p>
+    ${nextSet >= 0 ? `<button class="btn blue" onclick="startSet(${nextSet})">${SETS[nextSet].title}</button>` : ''}</div>`;
+  GOAL_TRACKS.forEach(t => {
+    html += `<div class="gsec"><h3>${t.icon} ${t.title}</h3><p>${t.note}</p>${t.units.map(u => `<div class="urow"><span>${u.icon} ${u.title}</span><div>${[0, 1, 2].map(p => `<button class="${S.done[doneKey(u.ui, p)] ? 'on' : ''}" onclick="startLesson(${u.ui},${p})">${S.done[doneKey(u.ui, p)] ? '✓' : ['★', '💬', '🏆'][p]}</button>`).join('')}</div></div>`).join('')}</div>`;
+  });
+  html += `<div class="gsec"><h3>🍿 Как смотреть сериалы</h3>${WATCH_STEPS.map(s => `<p><b>${s[0]}.</b> ${s[1]}</p>`).join('')}<h4>Что ещё посмотреть</h4>${WATCH_LINKS.map(l => `<p><a href="${l[1]}" target="_blank" rel="noopener">${l[0]}</a><br><small>${l[2]}</small></p>`).join('')}</div>`;
+  html += `<p class="hint">Видео и тексты: <a href="https://learningenglish.voanews.com/" target="_blank" rel="noopener">VOA Learning English</a>. Фразы: <a href="sentence-credits.html" target="_blank">Tatoeba</a></p></div>`;
+  app.innerHTML = html + tabbar();
+}
+
+function startSet(i) {
+  sfx.tap();
+  const P = SETS[i].phrases, kinds = SETS[i].si < 2 ? [0, 'say', 5, 1, 0, 3] : [0, 5, 'say', 4, 3, 1];
+  const qs = shuffle(P).slice(0, 12).map((p, k) => { const t = kinds[k % kinds.length]; return t === 'say' ? (canSpeak() ? speakQ(p) : phraseQ(p, 5, P)) : phraseQ(p, t, P); });
+  newLesson(qs, { practice: true, bonus: true, set: i });
+  question();
+}
+
+function openVoa(i) {
+  const v = VOA[i];
+  stopGames();
+  app.innerHTML = `<div class="lesson"><div class="bar"><button class="x" onclick="render()">✕</button><h2 style="margin:0;flex:1">${v.t}</h2></div>
+    ${v.v ? `<video class="vid" controls playsinline preload="none" src="${v.v}"></video>` : ''}
+    ${v.a ? `<p class="sub">Только звук:</p><audio class="aud" controls preload="none" src="${v.a}"></audio>` : ''}
+    <p class="sub">Сначала посмотрите без текста, потом с текстом, а затем тренируйте диалог.</p>
+    <details class="dlg"><summary>Показать диалог</summary>${v.l.map(l => `<p><b>${l[0]}:</b> ${l[1]}</p>`).join('')}</details>
+    <p class="hint"><a href="https://learningenglish.voanews.com${v.u}" target="_blank" rel="noopener">Источник: VOA Learning English</a></p>
+    <div class="foot"><button class="btn" onclick="startVoa(${i})">Тренировать диалог</button></div></div>`;
+  window.scrollTo(0, 0);
+}
+function startVoa(i) {
+  // реплики без учебных вставок ведущего, средней длины: их удобно повторить и записать
+  const lines = VOA[i].l.filter(l => !/bot/i.test(l[0]) && l[1].split(' ').length >= 3 && l[1].split(' ').length <= 12 && /^[\x20-\x7e]+$/.test(l[1]));
+  const pool = shuffle(lines).slice(0, 8).map(l => { const p = [l[1], '']; p.si = 2; return p; });
+  if (!pool.length) return render();
+  const qs = pool.map((p, k) => {
+    const q = k % 3 === 0 && canSpeak() ? speakQ(p) : phraseQ(p, k % 3 === 1 ? 5 : 2, pool);
+    q.key = '';
+    return q;
+  });
+  newLesson(qs, { practice: true, bonus: true, voa: i });
+  question();
 }
 
 /* ---------- Генерация заданий ---------- */
@@ -224,6 +291,7 @@ function phraseQ(p, kind, pool) {
   const words = p[0].split(' '), same = STAGES[p.si].phrases;
   if (kind === 1) return { type: 'choice', key: p[0], head: 'Переведите на русский', prompt: p[0], say: p[0], answer: p[1], options: shuffle([p[1], ...pick(pool, p, 3).map(x => x[1])]) };
   if (kind === 4) return { type: 'sent', key: p[0], prompt: p[1], audio: p[0], answer: p[0] };
+  if (kind === 5) return { type: 'sent', key: p[0], head: 'Напишите, что услышали', say: p[0], answer: p[0] };
   if (kind === 3) {
     const long = words.map((w, i) => strip(w).length >= 4 ? i : -1).filter(i => i >= 0);
     const idx = rnd(long.length ? long : words.map((w, i) => i));
@@ -277,7 +345,9 @@ function buildLesson(ui, part) {
 const SR = window.NO_MIC ? null : window.SpeechRecognition || window.webkitSpeechRecognition;
 const canSpeak = () => !!SR && !S.noMic;
 const DIGITS = { 0: 'zero', 1: 'one', 2: 'two', 3: 'three', 4: 'four', 5: 'five', 6: 'six', 7: 'seven', 8: 'eight', 9: 'nine', 10: 'ten' };
-const spokenWords = s => expand(s).replace(/\b\d+\b/g, d => DIGITS[d] || d).split(' ').filter(Boolean);
+// распознавание часто пишет gonna как going to, поэтому сравниваем полные формы
+const SHORT = { gonna: 'going to', wanna: 'want to', gotta: 'got to', kinda: 'kind of', sorta: 'sort of', dunno: 'do not know', lemme: 'let me', gimme: 'give me', "y'know": 'you know' };
+const spokenWords = s => expand(s).replace(/\b\d+\b/g, d => DIGITS[d] || d).replace(/[a-z']+/g, w => SHORT[w] || w).split(' ').filter(Boolean);
 // небольшие расхождения прощаются: распознавание не идеально, особенно с акцентом
 function spokenOk(alts, target) {
   const t = spokenWords(target);
@@ -439,7 +509,7 @@ function question() {
     if (q.pic) L.queue[0] = Object.assign({}, q, { type: 'type' }); else { L.queue.shift(); L.total--; }
     return question();
   }
-  const spk = q.say ? '<button class="spk" onclick="speak(L.queue[0].say)">🔊</button>' : '';
+  const spk = q.say ? '<button class="spk" onclick="speak(L.queue[0].say)">🔊</button><button class="spk slow" onclick="speak(L.queue[0].say,0.55)">🐢</button>' : '';
   const inp = `<input class="txt" id="inp" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="Ответ" oninput="document.getElementById('go').disabled=!this.value.trim()">`;
   let body = '';
   if (q.type === 'choice' || q.type === 'listen') {
@@ -450,11 +520,11 @@ function question() {
   } else if (q.type === 'type') {
     body = `<h2>${q.head || 'Напишите по-английски'}</h2>${q.pic ? `<div class="pic">${q.pic}</div>` : `<div class="prompt"><span>${q.prompt}</span></div>`}${inp}`;
   } else if (q.type === 'sent') {
-    body = `<h2>Переведите предложение</h2><div class="prompt"><span>${q.prompt}</span></div>${inp}`;
+    body = `<h2>${q.head || 'Переведите предложение'}</h2><div class="prompt">${spk}<span>${q.prompt || ''}</span></div>${inp}`;
   } else if (q.type === 'build') {
     body = `<h2>${q.head}</h2><div class="prompt">${spk}<span>${q.say ? '' : q.prompt}</span></div><div class="answer" id="ans"></div><div class="tiles" id="tiles"></div>`;
   } else if (q.type === 'speak') {
-    body = q.pic ? `<h2>${q.head}</h2><div class="pic">${q.pic}</div>` : `<h2>Скажите вслух</h2><div class="prompt">${spk}<span>${q.prompt}</span></div><p class="sub">${q.sub}</p>`;
+    body = q.pic ? `<h2>${q.head}</h2><div class="pic">${q.pic}</div>` : `<h2>Скажите вслух</h2><div class="prompt">${spk}<span>${q.prompt}</span></div><p class="sub">${q.sub || ''}</p>`;
     body += `<button class="mic" id="mic" onclick="micStart()">🎤</button><p class="micsay" id="micsay">${q.pic ? 'Нажмите на микрофон и скажите по-английски' : 'Нажмите на микрофон и произнесите'}</p>`;
   } else {
     L.ml = shuffle(q.pairs); L.mr = shuffle(q.pairs);
@@ -569,7 +639,7 @@ function next() { L.hearts <= 0 ? failed() : question(); }
 
 function failed() {
   speechSynthesis && speechSynthesis.cancel();
-  const again = L.jump ? `startJump(${L.jump})` : L.picGame ? 'startPicGame()' : L.practice ? 'startReview()' : `startLesson(${L.ui},${L.part})`;
+  const again = L.set !== undefined ? `startSet(${L.set})` : L.voa !== undefined ? `startVoa(${L.voa})` : L.jump ? `startJump(${L.jump})` : L.picGame ? 'startPicGame()' : L.practice ? 'startReview()' : `startLesson(${L.ui},${L.part})`;
   app.innerHTML = `<div class="lesson"><div class="result"><div class="big sad">🦊💔</div><h2>${L.jump ? 'Пока не получилось' : 'Жизни закончились'}</h2><p>Повторение — это путь к успеху. Попробуйте ещё раз, это бесплатно.</p></div><div class="foot"><button class="btn" onclick="${again}">Попробовать снова</button><p></p><button class="btn red" onclick="L=null;render()">На главную</button></div></div>`;
 }
 
@@ -582,7 +652,9 @@ function finish() {
     return;
   }
   const perfect = L.mistakes === 0, stars = perfect ? 3 : L.mistakes <= 2 ? 2 : 1;
-  const gain = L.xp + (L.practice ? 0 : 10) + (perfect ? 5 : 0);
+  const gain = L.xp + (L.practice && !L.bonus ? 0 : 10) + (perfect ? 5 : 0);
+  if (L.set !== undefined) S.sets[L.set] = Math.max(S.sets[L.set] || 0, stars);
+  if (L.voa !== undefined) S.voa[L.voa] = Math.max(S.voa[L.voa] || 0, stars);
   if (!L.practice) {
     const key = doneKey(L.ui, L.part);
     S.done[key] = Math.max(S.done[key] || 0, stars);
