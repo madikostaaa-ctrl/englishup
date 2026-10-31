@@ -140,6 +140,15 @@ input.txt{width:100%;padding:14px;font-size:20px;border:2px solid var(--line);bo
 /* картинки */
 .pic{font-size:110px;line-height:1.15;text-align:center;margin:6px 0 4px;animation:pop .4s}
 .ic{width:1em;height:1em;vertical-align:-.12em}
+.ph{display:block;width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:12px;background:var(--soft)}
+.pic .ph{width:min(100%,340px);margin:0 auto;border-radius:18px}
+.pics .opt{padding:6px;font-size:54px}
+.card b{width:100%;font-size:38px}
+.mcard .ph{height:100%;aspect-ratio:auto;border-radius:12px}
+.mcard.emo{padding:0;overflow:hidden}
+.fb .ph{width:76px}
+.th{width:36px;height:36px;object-fit:cover;border-radius:9px;vertical-align:middle}
+.hint a{color:inherit}
 
 /* говорение */
 .mic{display:block;margin:18px auto 14px;width:112px;height:112px;border-radius:50%;border:0;background:var(--blue);color:#fff;font-size:48px;box-shadow:0 7px 0 #1899d6}
