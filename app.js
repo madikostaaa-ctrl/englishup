@@ -197,12 +197,16 @@ function home() {
 }
 
 /* ---------- Генерация заданий ---------- */
-const hint = w => (w[2] ? w[2] + ' ' : '');
+const slug = w => w[0].replace(/ /g, '-');
+const hasPhoto = w => PHOTOS.has(slug(w));
+// настоящее фото, а если его нет — эмодзи или свой рисунок
+const photo = (w, cls) => hasPhoto(w) ? `<img class="${cls}" src="img/${slug(w)}.jpg" alt="">` : w[2] || '';
+const hint = w => hasPhoto(w) ? photo(w, 'th') + ' ' : w[2] ? w[2] + ' ' : '';
 const speakQ = item => ({ type: 'speak', key: item[0], prompt: item[0], sub: item[1], say: item[0], answer: item[0] });
 // картинка без подписи: нужно самому вспомнить слово и сказать его
 function picSayQ(w) {
   const scene = KEY[w[0]].unit.scene;
-  return { type: 'speak', pic: w[2], key: w[0], head: scene ? 'Что он делает?' : 'Что на картинке?', answer: scene ? 'He is ' + w[0] : w[0], kw: scene ? w[0] : '', audio: scene ? 'He is ' + w[0] : w[0] };
+  return { type: 'speak', pic: photo(w, 'ph'), key: w[0], head: scene ? 'Что он делает?' : 'Что на картинке?', answer: scene ? 'He is ' + w[0] : w[0], kw: scene ? w[0] : '', audio: scene ? 'He is ' + w[0] : w[0] };
 }
 const addPics = (qs, W, n) => { if (W.every(w => w[2])) shuffle(W).slice(0, n).forEach(w => qs.push(picSayQ(w))); };
 function wordQ(w, kind, pool) {
@@ -213,7 +217,7 @@ function wordQ(w, kind, pool) {
     case 1: return { type: 'choice', key: w[0], head: 'Переведите на английский', prompt: hint(w) + w[1], audio: w[0], answer: w[0], options: shuffle([w[0], ...o(3, 0)]) };
     case 2: return { type: 'listen', key: w[0], say: w[0], answer: w[0], options: shuffle([w[0], ...o(3, 0)]) };
     case 3: return { type: 'type', key: w[0], prompt: hint(w) + w[1], audio: w[0], answer: w[0] };
-    default: return { type: 'pic', key: w[0], say: w[0], prompt: w[0], answer: w[2], options: shuffle([w[2], ...pick(pool.filter(x => x[2]), w, 3).map(x => x[2])]) };
+    default: return { type: 'pic', key: w[0], say: w[0], prompt: w[0], answer: photo(w, 'ph'), options: shuffle([photo(w, 'ph'), ...pick(pool.filter(x => x[2]), w, 3).map(x => photo(x, 'ph'))]) };
   }
 }
 function phraseQ(p, kind, pool) {
@@ -422,7 +426,7 @@ function learnScreen() {
   const u = UNITS[L.ui];
   const tip = u.tip ? `<div class="tip"><b>💡 Подсказка</b>${u.tip}</div>` : '';
   app.innerHTML = `<div class="lesson">${bar()}<h2>${u.icon} Новые слова<br><small>Нажимайте на карточки, чтобы услышать</small></h2>${tip}<div class="cards">${u.words.map((w, i) =>
-    `<button class="card" onclick="speak(UNITS[${L.ui}].words[${i}][0]);this.classList.add('seen')">${w[2] ? `<b>${w[2]}</b>` : ''}<span>${w[0]}</span><small>${w[1]}</small></button>`).join('')}</div><div class="foot"><button class="btn" onclick="question()">Начать урок</button></div></div>`;
+    `<button class="card" onclick="speak(UNITS[${L.ui}].words[${i}][0]);this.classList.add('seen')">${w[2] ? `<b>${photo(w, 'ph')}</b>` : ''}<span>${w[0]}</span><small>${w[1]}</small></button>`).join('')}</div><div class="foot"><button class="btn" onclick="question()">Начать урок</button></div></div>`;
 }
 
 function question() {
@@ -701,7 +705,7 @@ function memTap(i) {
   const c = G.cards[i], el = document.getElementById('c' + i);
   if (el.classList.contains('up')) return;
   const emo = c.t === 'e' && c.w[2];
-  el.classList.add('up', emo ? 'emo' : 'word'); el.innerHTML = c.t === 'e' ? c.w[2] || c.w[1] : c.w[0];
+  el.classList.add('up', emo ? 'emo' : 'word'); el.innerHTML = c.t === 'e' ? photo(c.w, 'ph') || c.w[1] : c.w[0];
   if (c.t === 'w') speak(c.w[0]); else sfx.tap();
   G.open.push(i);
   if (G.open.length < 2) return;
@@ -740,7 +744,8 @@ function profile() {
     <h3>Настройки</h3><button class="opt" onclick="placement()">🎯 Пройти тест уровня заново</button><p></p>
     <button class="opt" onclick="S.sound=!S.sound;save();profile()">${S.sound ? '🔊 Звуки включены' : '🔇 Звуки выключены'}</button><p></p>
     ${SR ? `<button class="opt" onclick="S.noMic=!S.noMic;save();profile()">${S.noMic ? '🔕 Говорение выключено' : '🎤 Говорение включено'}</button><p></p>` : '<p class="hint">🎤 Этот браузер не поддерживает распознавание речи</p>'}
-    <button class="opt" onclick="resetAll()">🗑️ Сбросить прогресс</button></div>` + tabbar();
+    <button class="opt" onclick="resetAll()">🗑️ Сбросить прогресс</button>
+    <p class="hint"><a href="credits.html" target="_blank">Авторы фотографий</a></p></div>` + tabbar();
 }
 
 try { if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {}); } catch (e) {}
